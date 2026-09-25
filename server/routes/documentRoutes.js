@@ -7,6 +7,9 @@ const {
   getDocuments,
   getDocumentById,
   digitizeDocument,
+  updateDocumentText,
+  generateDocumentPdf,
+  deleteDocument,
 } = require("../controllers/documentController");
 
 const protect = require("../middleware/authMiddleware");
@@ -25,11 +28,17 @@ router.post(
   digitizeDocument
 );
 
+router.put("/:id/text", protect, updateDocumentText);
+router.get("/:id/pdf", protect, generateDocumentPdf);
+router.delete("/:id", protect, deleteDocument);
+
 // Get all documents belonging to logged-in user
 router.get(
   "/",
   protect,
-  getDocumentById
+  getDocuments
 );
+
+router.get("/:id", protect, getDocumentById);
 
 module.exports = router;

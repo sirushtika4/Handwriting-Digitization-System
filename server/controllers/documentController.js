@@ -1,5 +1,16 @@
 const Document = require("../models/Document");
-const { recognizeHandwriting } = require("../services/ocrService");
+const fs = require("fs/promises");
+const path = require("path");
+const mongoose = require("mongoose");
+const PDFDocument = require("pdfkit");
+const { recognizeHandwriting, recognizePdf } = require("../services/ocrService");
+
+const isValidId = (id) => mongoose.Types.ObjectId.isValid(id);
+
+const findOwnedDocument = async (id, userId) => {
+  if (!isValidId(id)) return null;
+  return Document.findOne({ _id: id, user: userId });
+};
 
 // Upload a new handwritten document
 const uploadDocument = async (req, res) => {
@@ -74,10 +85,7 @@ const getDocuments = async (req, res) => {
 };
 const getDocumentById = async (req, res) => {
   try {
-    const document = await Document.findOne({
-      _id: req.params.id,
-      user: req.user._id,
-    });
+    const document = await findOwnedDocument(req.params.id, req.user._id);
 
     if (!document) {
       return res.status(404).json({
@@ -94,7 +102,7 @@ const getDocumentById = async (req, res) => {
   } catch (error) {
     console.error("Get document error:", error);
 
-    return res.status(500).json({
+    return res.status(isValidId(req.params.id) ? 500 : 400).json({
       success: false,
       message: "Unable to retrieve document.",
     });
@@ -116,29 +124,16 @@ const digitizeDocument = async (req, res) => {
       });
     }
 
-    // Tesseract.js will initially handle images only
-    const supportedImageTypes = [
-      "image/jpeg",
-      "image/png",
-    ];
-
-    if (!supportedImageTypes.includes(document.fileType)) {
-      return res.status(400).json({
-        success: false,
-        message:
-          "OCR currently supports JPG and PNG images. PDF support will be added next.",
-      });
-    }
-
     // Change status while OCR is running
     document.status = "processing";
     await document.save();
 
     try {
+      const isPdf = document.fileType === "application/pdf";
       // Run OCR
-      const recognizedText = await recognizeHandwriting(
-        document.filePath
-      );
+      const recognizedText = isPdf
+        ? await recognizePdf(document.filePath)
+        : await recognizeHandwriting(document.filePath);
 
       // Save OCR result
       document.recognizedText = recognizedText.trim();
@@ -161,11 +156,20 @@ const digitizeDocument = async (req, res) => {
       document.status = "failed";
       await document.save();
 
-      console.error("OCR processing error:", ocrError);
+      console.error("OCR processing error:", {
+        documentId: document._id.toString(),
+        fileType: document.fileType,
+        filePath: document.filePath,
+        error: ocrError.stack || ocrError.message,
+      });
+
+      const message = document.fileType === "application/pdf"
+        ? ocrError.message
+        : "Handwriting recognition failed.";
 
       return res.status(500).json({
         success: false,
-        message: "Handwriting recognition failed.",
+        message,
       });
     }
 
@@ -179,9 +183,69 @@ const digitizeDocument = async (req, res) => {
   }
 };
 
+const updateDocumentText = async (req, res) => {
+  try {
+    const document = await findOwnedDocument(req.params.id, req.user._id);
+    if (!document) return res.status(404).json({ success: false, message: "Document not found." });
+    if (typeof req.body.recognizedText !== "string") {
+      return res.status(400).json({ success: false, message: "Recognized text must be a string." });
+    }
+
+    document.recognizedText = req.body.recognizedText;
+    await document.save();
+    return res.status(200).json({ success: true, message: "Changes saved successfully.", document });
+  } catch (error) {
+    console.error("Update document text error:", error);
+    return res.status(isValidId(req.params.id) ? 500 : 400).json({ success: false, message: "Unable to save document text." });
+  }
+};
+
+const generateDocumentPdf = async (req, res) => {
+  try {
+    const document = await findOwnedDocument(req.params.id, req.user._id);
+    if (!document) return res.status(404).json({ success: false, message: "Document not found." });
+
+    const pdf = new PDFDocument({ margin: 60, bufferPages: true });
+    const filename = `${document.title.replace(/[^a-z0-9-_]+/gi, "-") || "document"}.pdf`;
+    res.setHeader("Content-Type", "application/pdf");
+    res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+    pdf.pipe(res);
+    pdf.fontSize(20).text(document.title, { align: "center" });
+    pdf.moveDown();
+    pdf.fontSize(12).text(document.recognizedText || "No digitized text has been saved yet.", { lineGap: 5 });
+
+    const range = pdf.bufferedPageRange();
+    for (let pageIndex = range.start; pageIndex < range.start + range.count; pageIndex += 1) {
+      pdf.switchToPage(pageIndex);
+      pdf.fontSize(9).text(`Page ${pageIndex + 1}`, 60, pdf.page.height - 45, { align: "center", width: pdf.page.width - 120 });
+    }
+    return pdf.end();
+  } catch (error) {
+    console.error("Generate PDF error:", error);
+    return res.status(isValidId(req.params.id) ? 500 : 400).json({ success: false, message: "Unable to generate PDF." });
+  }
+};
+
+const deleteDocument = async (req, res) => {
+  try {
+    const document = await findOwnedDocument(req.params.id, req.user._id);
+    if (!document) return res.status(404).json({ success: false, message: "Document not found." });
+
+    await Document.deleteOne({ _id: document._id });
+    await fs.unlink(path.resolve(document.filePath)).catch(() => {});
+    return res.status(200).json({ success: true, message: "Document deleted successfully." });
+  } catch (error) {
+    console.error("Delete document error:", error);
+    return res.status(isValidId(req.params.id) ? 500 : 400).json({ success: false, message: "Unable to delete document." });
+  }
+};
+
 module.exports = {
   uploadDocument,
   getDocuments,
   getDocumentById,
   digitizeDocument,
+  updateDocumentText,
+  generateDocumentPdf,
+  deleteDocument,
 };

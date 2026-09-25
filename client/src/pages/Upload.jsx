@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { UploadCloud, FileText, ArrowLeft } from "lucide-react";
 import api from "../services/api";
+import Navbar from "../components/Navbar";
 
 function Upload() {
   const navigate = useNavigate();
@@ -98,6 +99,7 @@ function Upload() {
 
   return (
     <div className="upload-page">
+      <Navbar />
 
       <div className="upload-container">
 

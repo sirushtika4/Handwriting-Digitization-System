@@ -6,9 +6,13 @@ import {
   WandSparkles,
   Calendar,
   HardDrive,
+  Download,
+  Save,
+  Trash2,
 } from "lucide-react";
 
 import api from "../services/api";
+import Navbar from "../components/Navbar";
 
 function DocumentDetails() {
 
@@ -17,6 +21,10 @@ function DocumentDetails() {
 
   const [document, setDocument] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [processing, setProcessing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [recognizedText, setRecognizedText] = useState("");
+  const [message, setMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -37,6 +45,7 @@ function DocumentDetails() {
         );
 
         setDocument(response.data.document);
+        setRecognizedText(response.data.document.recognizedText || "");
 
       } catch (err) {
 
@@ -54,6 +63,66 @@ function DocumentDetails() {
     fetchDocument();
 
   }, [id]);
+
+  const authConfig = () => ({
+    headers: { Authorization: `Bearer ${localStorage.getItem("token")}` },
+  });
+
+  const handleDigitize = async () => {
+    try {
+      setProcessing(true);
+      setError("");
+      setMessage("");
+      const response = await api.post(`/documents/${id}/digitize`, {}, authConfig());
+      setDocument((current) => ({ ...current, ...response.data.document }));
+      setRecognizedText(response.data.document.recognizedText || "");
+      setMessage("Handwriting digitized successfully.");
+    } catch (err) {
+      setError(err.response?.data?.message || "Handwriting recognition failed.");
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSave = async () => {
+    try {
+      setSaving(true);
+      setError("");
+      setMessage("");
+      const response = await api.put(`/documents/${id}/text`, { recognizedText }, authConfig());
+      setDocument((current) => ({ ...current, ...response.data.document }));
+      setMessage("Changes saved successfully.");
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to save changes.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDownload = async () => {
+    try {
+      setError("");
+      const response = await api.get(`/documents/${id}/pdf`, { ...authConfig(), responseType: "blob" });
+      const url = URL.createObjectURL(response.data);
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = `${document.title || "document"}.pdf`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to generate PDF.");
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!window.confirm("Delete this document permanently?")) return;
+    try {
+      await api.delete(`/documents/${id}`, authConfig());
+      navigate("/documents");
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to delete document.");
+    }
+  };
 
   if (loading) {
     return (
@@ -87,6 +156,7 @@ function DocumentDetails() {
   return (
 
     <div className="document-details-page">
+      <Navbar />
 
       <div className="document-details-container">
 
@@ -111,15 +181,9 @@ function DocumentDetails() {
 
           </div>
 
-          <button
-            className="digitize-button"
-            onClick={() =>
-              navigate(`/documents/${document._id}/digitize`)
-            }
-          >
+          <button className="digitize-button" onClick={handleDigitize} disabled={processing}>
             <WandSparkles size={18} />
-
-            Digitize Handwriting
+            {processing ? "Digitizing..." : "Digitize Handwriting"}
           </button>
 
         </div>
@@ -164,29 +228,31 @@ function DocumentDetails() {
         </div>
 
 
-        <div className="document-preview">
+        {error && <div className="error-message">{error}</div>}
+        {message && <div className="success-message">{message}</div>}
 
-          <h2>Original Document</h2>
+        <div className="document-workspace">
+          <section className="document-panel">
+            <h2>Original Document</h2>
+            {isPDF ? <iframe src={fileURL} title="Document Preview" /> : <img src={fileURL} alt={document.title} />}
+          </section>
 
-          {isPDF ? (
-
-            <iframe
-              src={fileURL}
-              title="Document Preview"
-              width="100%"
-              height="700px"
-            />
-
-          ) : (
-
-            <img
-              src={fileURL}
-              alt={document.title}
-              className="document-preview-image"
-            />
-
-          )}
-
+          <section className="document-panel digitized-panel">
+            <div className="panel-heading">
+              <h2>Digitized Text</h2>
+              <span className={`status-badge status-${document.status}`}>{document.status}</span>
+            </div>
+            <textarea value={recognizedText} onChange={(event) => setRecognizedText(event.target.value)} placeholder="Digitized text will appear here." />
+            <div className="text-counts">
+              <span>{recognizedText.trim() ? recognizedText.trim().split(/\s+/).length : 0} words</span>
+              <span>{recognizedText.length} characters</span>
+            </div>
+            <div className="document-actions">
+              <button onClick={handleSave} disabled={saving}><Save size={16} />{saving ? "Saving..." : "Save Changes"}</button>
+              <button onClick={handleDownload} disabled={!recognizedText.trim()}><Download size={16} />Generate PDF</button>
+              <button className="danger-button" onClick={handleDelete}><Trash2 size={16} />Delete Document</button>
+            </div>
+          </section>
         </div>
 
       </div>

@@ -17,6 +17,17 @@ app.use(express.json());
 app.use("/api/auth", authRoutes);
 app.use("/api/documents", documentRoutes);
 
+app.use((error, req, res, next) => {
+  if (error.code === "LIMIT_FILE_SIZE") {
+    return res.status(400).json({ success: false, message: "File must be smaller than 10 MB." });
+  }
+  if (error.message?.startsWith("Unsupported file type")) {
+    return res.status(400).json({ success: false, message: error.message });
+  }
+  console.error("Unhandled API error:", error);
+  return res.status(500).json({ success: false, message: "An unexpected server error occurred." });
+});
+
 app.get("/api/health", (req, res) => {
   res.status(200).json({
     success: true,

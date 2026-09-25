@@ -4,9 +4,12 @@ import {
   ArrowLeft,
   FileText,
   Upload,
+  Search,
+  Trash2,
 } from "lucide-react";
 
 import api from "../services/api";
+import Navbar from "../components/Navbar";
 
 function Documents() {
   const navigate = useNavigate();
@@ -14,6 +17,9 @@ function Documents() {
   const [documents, setDocuments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [status, setStatus] = useState("all");
+  const [sort, setSort] = useState("newest");
 
   useEffect(() => {
     const fetchDocuments = async () => {
@@ -40,8 +46,26 @@ function Documents() {
     fetchDocuments();
   }, []);
 
+  const filteredDocuments = documents
+    .filter((document) => status === "all" || document.status === status)
+    .filter((document) => `${document.title} ${document.originalFileName}`.toLowerCase().includes(search.toLowerCase()))
+    .sort((first, second) => sort === "newest"
+      ? new Date(second.createdAt) - new Date(first.createdAt)
+      : new Date(first.createdAt) - new Date(second.createdAt));
+
+  const handleDelete = async (id) => {
+    if (!window.confirm("Delete this document permanently?")) return;
+    try {
+      await api.delete(`/documents/${id}`, { headers: { Authorization: `Bearer ${localStorage.getItem("token")}` } });
+      setDocuments((current) => current.filter((document) => document._id !== id));
+    } catch (err) {
+      setError(err.response?.data?.message || "Unable to delete document.");
+    }
+  };
+
   return (
     <div className="documents-page">
+      <Navbar />
 
       <div className="documents-container">
 
@@ -81,7 +105,15 @@ function Documents() {
           </div>
         )}
 
-        {!loading && documents.length === 0 && (
+        <div className="document-filters">
+          <label><Search size={17} /><input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search documents" /></label>
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option value="all">All statuses</option><option value="uploaded">Uploaded</option><option value="processing">Processing</option><option value="completed">Completed</option><option value="failed">Failed</option>
+          </select>
+          <select value={sort} onChange={(event) => setSort(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select>
+        </div>
+
+        {!loading && filteredDocuments.length === 0 && (
           <div className="empty-documents">
             <FileText size={50} />
 
@@ -99,7 +131,7 @@ function Documents() {
 
         <div className="document-grid">
 
-          {documents.map((document) => (
+          {filteredDocuments.map((document) => (
             <div
   className="document-card"
   key={document._id}
@@ -134,6 +166,8 @@ function Documents() {
                   document.createdAt
                 ).toLocaleDateString()}
               </small>
+
+              <button className="icon-delete" aria-label={`Delete ${document.title}`} onClick={(event) => { event.stopPropagation(); handleDelete(document._id); }}><Trash2 size={16} /></button>
 
             </div>
           ))}
