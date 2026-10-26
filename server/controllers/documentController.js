@@ -131,12 +131,16 @@ const digitizeDocument = async (req, res) => {
     try {
       const isPdf = document.fileType === "application/pdf";
       // Run OCR
-      const recognizedText = isPdf
+      const recognition = isPdf
         ? await recognizePdf(document.filePath)
         : await recognizeHandwriting(document.filePath);
 
-      // Save OCR result
-      document.recognizedText = recognizedText.trim();
+      if (!document.textManuallyEdited) {
+        document.recognizedText = recognition.text.trim();
+      }
+      document.recognitionEngine = recognition.engine;
+      document.recognitionConfidence = recognition.confidence;
+      document.recognitionPages = recognition.pages || [];
       document.status = "completed";
 
       await document.save();
@@ -148,6 +152,10 @@ const digitizeDocument = async (req, res) => {
           id: document._id,
           title: document.title,
           recognizedText: document.recognizedText,
+          textManuallyEdited: document.textManuallyEdited,
+          recognitionEngine: document.recognitionEngine,
+          recognitionConfidence: document.recognitionConfidence,
+          recognitionPages: document.recognitionPages,
           status: document.status,
         },
       });
@@ -192,6 +200,7 @@ const updateDocumentText = async (req, res) => {
     }
 
     document.recognizedText = req.body.recognizedText;
+  document.textManuallyEdited = true;
     await document.save();
     return res.status(200).json({ success: true, message: "Changes saved successfully.", document });
   } catch (error) {

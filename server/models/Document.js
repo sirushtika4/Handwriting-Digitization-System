@@ -44,6 +44,37 @@ const documentSchema = new mongoose.Schema(
       default: "",
     },
 
+    textManuallyEdited: {
+      type: Boolean,
+      default: false,
+    },
+
+    recognitionEngine: {
+      type: String,
+      default: null,
+    },
+
+    recognitionConfidence: {
+      type: Number,
+      min: 0,
+      max: 100,
+      default: null,
+    },
+
+    recognitionPages: [
+      {
+        pageNumber: Number,
+        text: String,
+        confidence: {
+          type: Number,
+          min: 0,
+          max: 100,
+          default: null,
+        },
+        engine: String,
+      },
+    ],
+
     status: {
       type: String,
       enum: ["uploaded", "processing", "completed", "failed"],

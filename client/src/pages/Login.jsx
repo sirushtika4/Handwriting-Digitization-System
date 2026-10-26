@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import api from "../services/api";
 
 function Login() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   const [formData, setFormData] = useState({
     email: "",
@@ -35,7 +36,13 @@ function Login() {
         JSON.stringify(response.data.user)
       );
 
-      navigate("/dashboard");
+      const returnTo = searchParams.get("returnTo");
+      navigate(
+        returnTo?.startsWith("/") && !returnTo.startsWith("//") && !returnTo.includes("\\")
+          ? returnTo
+          : "/dashboard",
+        { replace: true }
+      );
     } catch (err) {
       setError(
         err.response?.data?.message ||
@@ -59,6 +66,12 @@ function Login() {
         <p className="auth-subtitle">
           Login to continue digitizing your documents.
         </p>
+
+        {searchParams.get("reason") === "session-expired" && (
+          <div className="error-message" role="status">
+            Your session has expired. Please log in again to continue.
+          </div>
+        )}
 
         {error && (
           <div className="error-message">

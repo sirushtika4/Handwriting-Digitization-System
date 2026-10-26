@@ -1,27 +1,27 @@
 const fs = require("fs/promises");
-const { recognize } = require("tesseract.js");
-
-const recognizeImage = async (image) => {
-  const result = await recognize(image, "eng", {
-    logger: (info) => {
-      if (info.status === "recognizing text") {
-        console.log(`OCR progress: ${Math.round(info.progress * 100)}%`);
-      }
-    },
-  });
-
-  return result.data.text;
-};
+const { recognizeImage } = require("./recognitionService");
+const {
+  preprocessImage,
+  cleanupPreprocessedImage,
+} = require("./preprocessingService");
 
 const recognizeHandwriting = async (filePath) => {
+  let preprocessedPath;
+
   try {
     console.log("OCR started:", filePath);
 
-    const text = await recognizeImage(filePath);
-    return text.trim();
+    preprocessedPath = await preprocessImage(filePath);
+    const result = await recognizeImage(preprocessedPath);
+    return {
+      ...result,
+      text: result.text.trim(),
+    };
   } catch (error) {
     console.error("OCR Error:", error);
     throw new Error("Unable to recognize text from document.");
+  } finally {
+    await cleanupPreprocessedImage(preprocessedPath);
   }
 };
 
@@ -81,8 +81,20 @@ const recognizePdf = async (filePath) => {
       }
 
       try {
-        const pageText = (await recognizeImage(canvas.toBuffer("image/png"))).trim();
-        pages.push(`--- Page ${pageNumber} ---\n${pageText}`);
+        const renderedPage = canvas.toBuffer("image/png");
+        const preprocessedPath = await preprocessImage(renderedPage);
+        try {
+          const result = await recognizeImage(preprocessedPath);
+          const pageText = result.text.trim();
+          pages.push({
+            pageNumber,
+            text: pageText,
+            confidence: result.confidence,
+            engine: result.engine,
+          });
+        } finally {
+          await cleanupPreprocessedImage(preprocessedPath);
+        }
         console.log(`[PDF OCR] Page ${pageNumber} OCR completed`);
       } catch (error) {
         console.error(`[PDF OCR] OCR failed for page ${pageNumber}:`, error);
@@ -92,12 +104,28 @@ const recognizePdf = async (filePath) => {
       }
     }
 
-    const combinedText = pages.join("\n\n").trim();
-    if (!combinedText.replace(/--- Page \d+ ---/g, "").trim()) {
+    const combinedText = pages
+      .map((page) => `--- Page ${page.pageNumber} ---\n${page.text}`)
+      .join("\n\n")
+      .trim();
+    if (!pages.some((page) => page.text)) {
       throw new Error("No recognizable text was detected.");
     }
 
-    return combinedText;
+    const confidences = pages
+      .map((page) => page.confidence)
+      .filter((confidence) => Number.isFinite(confidence));
+
+    return {
+      text: combinedText,
+      confidence: confidences.length
+        ? confidences.reduce((sum, confidence) => sum + confidence, 0) / confidences.length
+        : null,
+      pages,
+      engine: pages.every((page) => page.engine === pages[0].engine)
+        ? pages[0].engine
+        : "mixed",
+    };
   } finally {
     if (pdfDocument) {
       await pdfDocument.cleanup().catch((error) => console.error("[PDF OCR] Cleanup error:", error));
