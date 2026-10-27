@@ -25,7 +25,6 @@ function Home() {
         </div></section>
 
         <section className="steps-section"><div className="section-intro"><h2>From page to PDF in four steps</h2></div><div className="step-grid"><Step number="01" title="Upload" text="Choose a handwritten page." /><Step number="02" title="Digitize" text="Let OCR recognize the content." /><Step number="03" title="Edit" text="Review and correct the text." /><Step number="04" title="Export" text="Download your polished PDF." /></div></section>
-        <section className="cta-section"><h2>Ready to digitize your handwriting?</h2><p>Bring clarity to your notes and make every page searchable.</p><Link className="button" to="/register">Start Digitizing</Link></section>
       </main>
       <footer className="site-footer"><div><strong>Ink2Digital</strong><p>Handwriting Digitization & PDF Conversion System</p></div><div className="footer-links"><Link to="/">Home</Link><Link to="/login">Login</Link><Link to="/register">Create Account</Link></div><p>University project &copy; 2026</p></footer>
     </div>
